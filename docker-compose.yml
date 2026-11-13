@@ -1,0 +1,39 @@
+# Un contenedor por microservicio. Solo el gateway (interfaz) publica un puerto; los demas viven en la red interna.
+#   docker compose up --build        ->  http://localhost:8080
+#   docker compose stop caja2        ->  cierra una caja y el resto sigue
+x-servicio: &servicio
+  build: .
+  restart: unless-stopped
+  environment: &env
+    JAVA_TOOL_OPTIONS: "-Dtkn=${TKN:-cambia-este-token} -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8"
+
+services:
+  registro:
+    <<: *servicio
+    command: ["java", "-cp", "out", "Registro", "5100"]
+    environment: { <<: *env, HOST_ANUNCIO: registro }
+  inventario:
+    <<: *servicio
+    command: ["java", "-cp", "out", "Sistema", "${BOLETOS:-20}", "5000", "registro:5100"]
+    environment: { <<: *env, HOST_ANUNCIO: inventario }
+    depends_on: [registro]
+  caja1:
+    <<: *servicio
+    command: ["java", "-cp", "out", "Caja", "${CUPO:-2}", "5001", "C1", "registro:5100"]
+    environment: { <<: *env, HOST_ANUNCIO: caja1 }
+    depends_on: [registro]
+  caja2:
+    <<: *servicio
+    command: ["java", "-cp", "out", "Caja", "${CUPO:-2}", "5001", "C2", "registro:5100"]
+    environment: { <<: *env, HOST_ANUNCIO: caja2 }
+    depends_on: [registro]
+  compras:
+    <<: *servicio
+    command: ["java", "-cp", "out", "Compras", "5200", "registro:5100"]
+    environment: { <<: *env, HOST_ANUNCIO: compras }
+    depends_on: [registro]
+  interfaz:
+    <<: *servicio
+    command: ["java", "-Dpublico=true", "-cp", "out", "Interfaz", "8080", "registro:5100"]
+    ports: ["8080:8080"]
+    depends_on: [registro]
