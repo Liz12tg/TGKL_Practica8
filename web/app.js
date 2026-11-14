@@ -1,12 +1,4 @@
 'use strict';
-/* Boletería Ópera: lógica de la app.
- *
- * - Habla con la API REST (/api/v1) de la Interfaz; nunca con el Sistema ni las Cajas.
- * - Si no hay conexión, las compras se guardan en una cola y se envían al volver, con una llave de
- *   idempotencia (Idempotency-Key) para que un reintento no compre dos veces.
- * - El service worker (sw.js) guarda la app y las últimas respuestas de la API para abrirla sin conexión.
- */
-
 const API = '/api/v1';
 const MAX_BOLETOS = 8;
 const VISTAS = ['boletos', 'mis-boletos', 'cajas', 'en-vivo'];
@@ -20,7 +12,7 @@ function h(tag, props, ...hijos) {
   for (const [k, v] of Object.entries(props || {})) {
     if (v == null || v === false) continue;
     if (k === 'class') e.className = v;
-    else if (k === 'vars') for (const [n, val] of Object.entries(v)) e.style.setProperty(n, val);   // CSSOM: permitido por la CSP
+    else if (k === 'vars') for (const [n, val] of Object.entries(v)) e.style.setProperty(n, val);
     else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
     else e.setAttribute(k, v === true ? '' : v);
   }
@@ -39,43 +31,40 @@ const icono = id => {
   return s;
 };
 
-/* ------------------------------------------------------------------ almacenamiento local (con try/catch: puede fallar) */
 const Guardado = {
   leer(clave, defecto) {
     try { const t = localStorage.getItem('boleteria.' + clave); return t == null ? defecto : JSON.parse(t); } catch (e) { return defecto; }
   },
   escribir(clave, valor) {
-    try { localStorage.setItem('boleteria.' + clave, JSON.stringify(valor)); } catch (e) { /* sin espacio o bloqueado */ }
+    try { localStorage.setItem('boleteria.' + clave, JSON.stringify(valor)); } catch (e) {}
   },
 };
 
-/* ------------------------------------------------------------------ estado */
 const S = {
   vista: 'boletos',
   cantidad: 2,
-  conexion: 'conectando',               // conectando | ok | guardado | sin
+  conexion: 'conectando',
   evento: null,
   cajas: [],
   servicios: [],
-  compras: new Map(),                   // id -> compra (las de la API en este momento)
+  compras: new Map(),
   eventosSig: 0,
-  mias: Guardado.leer('mias', []),      // [{id, instancia}]
-  snapshots: Guardado.leer('snapshots', {}),    // "instancia:id" -> última copia de la compra
-  cola: Guardado.leer('cola', []),      // compras pendientes de enviar (sin conexión)
+  mias: Guardado.leer('mias', []),
+  snapshots: Guardado.leer('snapshots', {}),
+  cola: Guardado.leer('cola', []),
   anunciadas: new Set(Guardado.leer('anunciadas', [])),
-  seguimiento: null,                    // id de la compra que se está haciendo ahora
+  seguimiento: null,
   foliosVistos: new Set(),
   instancia: null,
 };
-let reg = null;                          // registro del service worker
+let reg = null;
 let promptInstalar = null;
 let animandoCifra = 0;
 
-/* ------------------------------------------------------------------ API */
 async function api(ruta, opciones) {
   const r = await fetch(API + ruta, opciones);
   let datos = null;
-  try { datos = await r.json(); } catch (e) { /* 304 o sin cuerpo */ }
+  try { datos = await r.json(); } catch (e) {}
   return { ok: r.ok, status: r.status, datos, desdeCache: r.headers.get('X-Desde-Cache') === '1' };
 }
 
@@ -85,16 +74,14 @@ function misIdsVigentes() {
   return S.mias.filter(m => m.instancia === S.instancia).map(m => m.id);
 }
 
-/* ------------------------------------------------------------------ avisos pequeños */
 function toast(texto, accion) {
   const el = h('div', { class: 'toast', role: 'status' }, h('span', {}, texto),
     accion ? h('button', { type: 'button', onclick: () => { accion.fn(); el.remove(); } }, accion.texto) : null);
   $('#toasts').append(el);
   setTimeout(() => el.remove(), accion ? 9000 : 3500);
 }
-function vibrar(patron) { try { if (navigator.vibrate) navigator.vibrate(patron); } catch (e) { /* no disponible */ } }
+function vibrar(patron) { try { if (navigator.vibrate) navigator.vibrate(patron); } catch (e) {} }
 
-/* ------------------------------------------------------------------ navegación entre vistas */
 function ir(vista, { empujar = true } = {}) {
   if (!VISTAS.includes(vista)) vista = 'boletos';
   S.vista = vista;
@@ -119,7 +106,6 @@ document.addEventListener('click', e => {
 });
 window.addEventListener('popstate', () => ir(location.hash.slice(1), { empujar: false }));
 
-/* ------------------------------------------------------------------ conexión */
 function pintarConexion() {
   const aviso = $('#aviso');
   let msg = '';
@@ -130,7 +116,6 @@ function pintarConexion() {
   $('#aviso-texto').textContent = msg;
 }
 
-/* ------------------------------------------------------------------ ciclo de consulta */
 let cicloActivo = false;
 let temporizador = 0;
 
@@ -191,7 +176,6 @@ function guardarSnapshots() {
   if (cambio) Guardado.escribir('snapshots', S.snapshots);
 }
 
-/* Devuelve la compra mía a mostrar: la de la API si existe y, si no, la última copia guardada. */
 function comprasMias() {
   return S.mias.map(m => {
     const viva = m.instancia === S.instancia ? S.compras.get(m.id) : null;
@@ -200,7 +184,6 @@ function comprasMias() {
   }).filter(Boolean).sort((a, b) => b.c.creada - a.c.creada);
 }
 
-/* ------------------------------------------------------------------ compra */
 async function enviarCompra(item) {
   const r = await fetch(API + '/compras', {
     method: 'POST',
@@ -208,7 +191,7 @@ async function enviarCompra(item) {
     body: JSON.stringify({ nombre: item.nombre, boletos: item.boletos }),
   });
   let datos = null;
-  try { datos = await r.json(); } catch (e) { /* sin cuerpo */ }
+  try { datos = await r.json(); } catch (e) {}
   return { status: r.status, datos };
 }
 
@@ -243,8 +226,8 @@ async function comprar(ev) {
       ciclo();
     } else if (r.status === 429) {
       toast('Hay muchas compras en curso. Intenta en unos segundos.');
+      
     } else if (r.status === 503) {
-      // El gateway está vivo pero el servicio de Compras no: se trata como falta de conexión (cola + misma llave).
       const falla = new Error('servicio de compras no disponible');
       falla.servicio = true;
       throw falla;
@@ -252,7 +235,6 @@ async function comprar(ev) {
       toast((r.datos && r.datos.error) || 'No se pudo hacer la compra.');
     }
   } catch (e) {
-    // Sin red: la compra queda en cola. Al volver la conexión se envía con la misma llave.
     S.cola.push(item); guardarCola();
     pedirSincronizacion();
     toast(e.servicio ? 'El servicio de compras no responde: tu compra quedó en cola.' : 'Sin conexión: tu compra quedó en cola.',
@@ -273,7 +255,7 @@ async function vaciarCola() {
     while (S.cola.length) {
       const item = S.cola[0];
       let r;
-      try { r = await enviarCompra(item); } catch (e) { break; }          // sigue sin red: se intenta después
+      try { r = await enviarCompra(item); } catch (e) { break; }
       if (r.status === 202 || r.status === 200) {
         S.cola.shift(); guardarCola();
         registrarMia(r.datos);
@@ -281,7 +263,7 @@ async function vaciarCola() {
       } else if (r.status === 429 || r.status >= 500) {
         break;
       } else {
-        S.cola.shift(); guardarCola();                                    // la rechazó el servidor: no tiene caso reintentar
+        S.cola.shift(); guardarCola();
         toast((r.datos && r.datos.error) || 'Se descartó una compra en cola.');
       }
     }
@@ -293,7 +275,7 @@ async function vaciarCola() {
 }
 
 function pedirSincronizacion() {
-  if (reg && 'sync' in reg) reg.sync.register('enviar-cola').catch(() => { /* no disponible */ });
+  if (reg && 'sync' in reg) reg.sync.register('enviar-cola').catch(() => {});
 }
 
 function revisarSeguimiento() {
@@ -309,7 +291,6 @@ function revisarSeguimiento() {
   if (document.hidden) notificar(c); else mostrarHoja(c);
 }
 
-/* ------------------------------------------------------------------ hoja de resultado y notificaciones */
 function textoResultado(c) {
   if (c.resultado === 'completa') return { t: c.boletos === 1 ? '¡Listo! Tienes tu boleto' : '¡Listo! Compraste ' + c.boletos + ' boletos', d: 'Ya están en “Mis boletos”.' };
   if (c.resultado === 'parcial') return { t: 'Compraste ' + c.comprados + ' de ' + c.boletos, d: 'Se agotaron los boletos antes de completar tu compra.' };
@@ -331,10 +312,9 @@ function cerrarHoja() { $('#hoja-fondo').hidden = true; }
 async function notificar(c) {
   if (!Guardado.leer('avisos', false) || !('Notification' in window) || Notification.permission !== 'granted' || !reg) return;
   const r = textoResultado(c);
-  try { await reg.showNotification(r.t, { body: r.d, icon: '/icons/icon-192.png', tag: 'compra-' + c.id, data: { vista: 'mis-boletos' } }); } catch (e) { /* sin permiso */ }
+  try { await reg.showNotification(r.t, { body: r.d, icon: '/icons/icon-192.png', tag: 'compra-' + c.id, data: { vista: 'mis-boletos' } }); } catch (e) {}
 }
 
-/* ------------------------------------------------------------------ pintar: Boletos */
 function nombreCaja(direccion) {
   const c = S.cajas.find(x => x.direccion === direccion);
   return c ? c.id : direccion;
@@ -404,7 +384,6 @@ function pintarAccion() {
     : 'Máximo ' + MAX_BOLETOS + ' por persona.';
 }
 
-/* ------------------------------------------------------------------ pintar: Mis boletos */
 const formatoFecha = new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 
 function tarjetaBoleto(c, folio, antigua) {
@@ -447,10 +426,9 @@ function pintarMisBoletos() {
   const ins = $('#insignia-mis');
   ins.hidden = total === 0;
   ins.textContent = total;
-  try { if (navigator.setAppBadge) { total ? navigator.setAppBadge(total) : navigator.clearAppBadge(); } } catch (e) { /* no disponible */ }
+  try { if (navigator.setAppBadge) { total ? navigator.setAppBadge(total) : navigator.clearAppBadge(); } } catch (e) {}
 }
 
-/* ------------------------------------------------------------------ pintar: Cajas */
 function clientesEnCaja(direccion) {
   return [...S.compras.values()].filter(c => c.estado === 'en_caja' && c.caja === direccion);
 }
@@ -483,7 +461,6 @@ function pintarServicios() {
       h('span', { class: 'estado' + (s.enLinea ? '' : ' mal') }, s.enLinea ? 'En línea' : 'Caído'))));
 }
 
-/* ------------------------------------------------------------------ pintar: En vivo */
 function pintarEnVivo() {
   const e = S.evento;
   if (e) {
@@ -543,7 +520,6 @@ function pintarBitacora(d) {
   if (abajo) cont.scrollTop = cont.scrollHeight;
 }
 
-/* ------------------------------------------------------------------ pintar todo */
 function pintar() {
   pintarConexion();
   pintarCartel();
@@ -560,7 +536,6 @@ function pintarInsignia() {
   ins.textContent = total;
 }
 
-/* ------------------------------------------------------------------ simulador de fila */
 const NOMBRES = ['Ana', 'Beto', 'Carla', 'Dani', 'Eva', 'Fer', 'Gael', 'Hugo', 'Inés', 'Juan', 'Karla', 'Luis'];
 async function simularFila() {
   const boton = $('#btn-simular'), error = $('#error-simular');
@@ -583,7 +558,6 @@ async function simularFila() {
   }
 }
 
-/* ------------------------------------------------------------------ instalar la app */
 const esStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const esIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
 
@@ -614,7 +588,6 @@ async function instalar() {
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); promptInstalar = e; pintarInstalar(); });
 window.addEventListener('appinstalled', () => { promptInstalar = null; toast('App instalada'); pintarInstalar(); });
 
-/* ------------------------------------------------------------------ service worker */
 function registrarServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   let recargando = false;
@@ -631,11 +604,10 @@ function registrarServiceWorker() {
       const w = r.installing;
       w.addEventListener('statechange', () => { if (w.state === 'installed') hayNueva(r.waiting || w); });
     });
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => { /* sin red */ }); });
-  }).catch(() => { /* la app funciona igual, solo sin modo sin conexión */ });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); });
+  }).catch(() => {});
 }
 
-/* ------------------------------------------------------------------ arranque */
 function iniciar() {
   const nombre = Guardado.leer('nombre', '');
   if (nombre) $('#nombre').value = nombre;

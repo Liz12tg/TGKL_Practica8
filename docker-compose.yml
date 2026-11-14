@@ -1,6 +1,3 @@
-# Un contenedor por microservicio. Solo el gateway (interfaz) publica un puerto; los demas viven en la red interna.
-#   docker compose up --build        ->  http://localhost:8080
-#   docker compose stop caja2        ->  cierra una caja y el resto sigue
 x-servicio: &servicio
   build: .
   restart: unless-stopped

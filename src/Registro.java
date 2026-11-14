@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Directorio de servicios: cada microservicio se anuncia aquí y los demás lo encuentran por su tipo. */
 public class Registro {
     private static final long VIGENCIA_MS = Long.getLong("vigencia", 6L) * 1000;
     private static final List<String> TIPOS = List.of("inventario", "caja", "compras");

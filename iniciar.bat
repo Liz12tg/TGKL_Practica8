@@ -1,9 +1,5 @@
 @echo off
 chcp 65001 >nul
-rem Microservicios de la boleteria.
-rem   iniciar.bat          -> un solo proceso con los 6 servicios (cada uno en su puerto), 20 boletos
-rem   iniciar.bat demo     -> igual, con 6 boletos y cajas de 1 cliente (la fila se ve rapido)
-rem   iniciar.bat separado -> cada servicio en su propia ventana (para apagar uno y ver como reacciona el resto)
 set BOLETOS=20
 set CUPO=2
 if /i "%1"=="demo" (set BOLETOS=6& set CUPO=1)

@@ -163,7 +163,6 @@ final class Web {
 
     static String infoPool() { return "hilos: " + HILOS + ", cola: " + COLA; }
 
-    // ------------------------------------------------------------------ JSON mínimo (compartido por los servicios)
     static String esc(String s) {
         StringBuilder b = new StringBuilder("\"");
         for (char c : s.toCharArray()) {
@@ -250,13 +249,8 @@ final class Web {
         }
         return null;
     }
-
-
-    // ------------------------------------------------------------------ llamadas entre microservicios
-    /** Dirección con la que un servicio se anuncia en el Registro (en Docker: el nombre del contenedor). */
     static final String ANUNCIO = System.getenv("HOST_ANUNCIO") != null ? System.getenv("HOST_ANUNCIO") : System.getProperty("host", "localhost");
 
-    /** Respuesta HTTP completa (no lanza excepción por códigos 4xx/5xx: el gateway los reenvía tal cual). */
     static class Resp {
         final int codigo;
         final String cuerpo;
@@ -295,7 +289,6 @@ final class Web {
         }
     }
 
-    /** Un servicio avisa al Registro "aquí estoy" cada 2 s (latido). Si deja de avisar, el Registro lo olvida. */
     static void anunciar(Nodo registro, String nombre, String tipo, int puerto) {
         if (registro == null) { return; }
         String camino = "/registrar?nombre=" + enc(nombre) + "&tipo=" + enc(tipo) + "&host=" + enc(ANUNCIO) + "&puerto=" + puerto;
@@ -307,13 +300,10 @@ final class Web {
         latido.scheduleWithFixedDelay(() -> {
             try {
                 post(registro, camino, null, Duration.ofSeconds(2));
-            } catch (Exception e) {
-                // el Registro puede estar apagado un momento: se reintenta en el siguiente latido
-            }
+            } catch (Exception e) {}
         }, 0, 2, TimeUnit.SECONDS);
     }
 
-    /** Pregunta al Registro quién ofrece un servicio. Guarda la última respuesta buena por si el Registro falla. */
     static class Directorio {
         private final Nodo registro;
         private volatile List<Servicio> ultimo = new ArrayList<>();
@@ -356,7 +346,6 @@ final class Web {
         }
     }
 
-    /** Disyuntor (circuit breaker): tras 3 fallos seguidos deja de llamar 5 s y responde rápido "no disponible". */
     static class Disyuntor {
         private int fallos;
         private long abiertoHasta;
@@ -372,7 +361,6 @@ final class Web {
         synchronized boolean abierto() { return System.currentTimeMillis() < abiertoHasta; }
     }
 
-    /** Respuesta con cabeceras extra (Location, Retry-After...). */
     static void responder(HttpExchange ex, int codigo, String json, String... extra) throws IOException {
         for (int i = 0; i + 1 < extra.length; i += 2) { ex.getResponseHeaders().set(extra[i], extra[i + 1]); }
         responder(ex, codigo, json);

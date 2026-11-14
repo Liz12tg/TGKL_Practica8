@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Microservicios de la boleteria.  ./iniciar.sh [demo|separado]
 cd "$(dirname "$0")" || exit 1
 mkdir -p out && javac -encoding UTF-8 -d out src/*.java || exit 1
 export BOLETOS=${BOLETOS:-20} CUPO=${CUPO:-2}

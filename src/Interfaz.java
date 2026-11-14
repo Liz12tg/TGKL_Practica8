@@ -20,11 +20,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
-/**
- * API Gateway (BFF) de la boletería: es la única puerta que ve el navegador.
- * Sirve la PWA, expone la API REST v1 y reparte el trabajo entre los microservicios
- * (Registro, Sistema/inventario, Cajas y Compras). El token interno nunca sale de aquí.
- */
 public class Interfaz {
     private static final int MAX_CUERPO = 2048;
     private static final String API = "/api/v1";
@@ -64,7 +59,6 @@ public class Interfaz {
         }
     }
 
-    /** Un microservicio visto desde el gateway (para /salud y el panel "Servicios" de la app). */
     private static class EstadoServicio {
         final String nombre, tipo, direccion;
         final boolean enLinea;
@@ -93,7 +87,6 @@ public class Interfaz {
         this.directorio = new Web.Directorio(registro);
     }
 
-    /** Cada 500 ms pregunta al Registro quién está vivo y le pide su estado a cada servicio. */
     private void sondear() {
         List<Web.Servicio> todos;
         try {
@@ -131,7 +124,6 @@ public class Interfaz {
         boolean comprasOk = false;
         if (comp != null) {
             try {
-                // La "instancia" es la de Compras: si ese servicio se reinicia, la app sabe que sus compras viejas se perdieron.
                 instancia = Long.parseLong(Web.campo(Web.get(comp, "/estado", Duration.ofMillis(800)), "instancia"));
                 comprasOk = true;
             } catch (Exception e) {
@@ -202,7 +194,6 @@ public class Interfaz {
         return "{\"estado\":" + Web.esc(todos ? "ok" : "degradado") + ",\"servicios\":[" + l + b;
     }
 
-    // ------------------------------------------------------------------ HTTP
     private static void cabeceras(HttpExchange ex, String tipo) {
         var h = ex.getResponseHeaders();
         h.set("Content-Type", tipo);
@@ -228,7 +219,6 @@ public class Interfaz {
         responder(ex, codigo, "application/json; charset=UTF-8", cuerpo.getBytes(StandardCharsets.UTF_8), todo);
     }
 
-    /** GET con ETag: si el cliente ya tiene esta versión, responde 304 sin cuerpo. */
     private static void jsonConEtag(HttpExchange ex, String cuerpo) throws IOException {
         String etag = "\"" + Integer.toHexString(cuerpo.hashCode()) + "\"";
         String previo = ex.getRequestHeaders().getFirst("If-None-Match");
@@ -281,7 +271,6 @@ public class Interfaz {
             responder(ex, 304, tipo, new byte[0], "ETag", etag, "Cache-Control", "no-cache");
             return;
         }
-        // no-cache = "revalida con el servidor antes de usarlo"; el service worker es quien guarda la copia sin conexión.
         if (nombre.equals("sw.js")) {
             responder(ex, 200, tipo, datos, "ETag", etag, "Cache-Control", "no-cache", "Service-Worker-Allowed", "/");
         } else {
@@ -289,7 +278,6 @@ public class Interfaz {
         }
     }
 
-    /** Reenvía una petición a un microservicio. Si falla o el disyuntor está abierto, responde 503 sin hacer esperar. */
     private void reenviar(HttpExchange ex, String metodo, String camino, String cuerpo, Map<String, String> cab) throws IOException {
         Web.Nodo destino = directorio.uno("compras");
         if (destino == null || !discompras.permite()) {
@@ -338,9 +326,7 @@ public class Interfaz {
         }
     }
 
-    /** El gateway revisa lo que es de "la puerta" (CSRF, tipo, tamaño, JSON, llave) y deja las reglas del negocio a Compras. */
     private void crearCompra(HttpExchange ex) throws IOException {
-        // CSRF: otra página no puede mandar este encabezado ni este tipo de contenido sin que el navegador pida permiso.
         if (ex.getRequestHeaders().getFirst("X-Requested-With") == null) {
             json(ex, 403, error("Falta el encabezado X-Requested-With", null));
             return;
@@ -384,9 +370,7 @@ public class Interfaz {
             System.out.println("[Interfaz] Error atendiendo " + ex.getRequestURI() + ": " + e);
             try {
                 json(ex, 500, error("Error interno", null));
-            } catch (IOException | RuntimeException ignorado) {
-                // la respuesta ya había empezado
-            }
+            } catch (IOException | RuntimeException ignorado) {}
         } finally {
             ex.close();
         }
@@ -422,12 +406,7 @@ public class Interfaz {
         System.out.println();
     }
 
-    /**
-     * Todo en uno: los seis servicios en un solo proceso, cada uno con su propio puerto HTTP y hablando entre sí por la red
-     * (Registro 5100, Sistema 5000, Cajas 5001/5002, Compras 5200 y este gateway). Es lo que usa el despliegue (PORT, BOLETOS, CUPO).
-     */
     private static void todoEnUno() throws IOException {
-        // Token interno aleatorio: solo lo conocen los servicios de este proceso.
         if (System.getProperty("tkn") == null) { System.setProperty("tkn", java.util.UUID.randomUUID().toString()); }
         String pe = System.getenv("PORT");
         int puerto = pe != null ? Integer.parseInt(pe) : 8080;
